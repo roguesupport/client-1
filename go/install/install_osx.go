@@ -586,6 +586,16 @@ func Uninstall(context Context, components []string, log Log) keybase1.Uninstall
 		componentResults = append(componentResults, componentResult(string(ComponentNameUpdater), err))
 	}
 
+	if libkb.IsIn(string(ComponentNameFuse), components, false) {
+		err = uninstallFuse(context.GetRunMode(), log)
+		componentResults = append(componentResults, componentResult(string(ComponentNameFuse), err))
+	}
+
+	if libkb.IsIn(string(ComponentNameHelper), components, false) {
+		err = uninstallHelper(context.GetRunMode(), log)
+		componentResults = append(componentResults, componentResult(string(ComponentNameHelper), err))
+	}
+
 	return newUninstallResult(componentResults)
 }
 
@@ -619,12 +629,8 @@ func UninstallKBFS(runMode libkb.RunMode, mountDir string, forceUnmount bool, lo
 		return fmt.Errorf("Mount has files after unmounting: %s", mountDir)
 	}
 
-	appPath, err := AppBundleForPath()
-	if err != nil {
-		return err
-	}
 	log.Info("Removing %s", mountDir)
-	if err := removeMountDir(appPath, string(runMode), log); err != nil {
+	if err := uninstallMountDir(runMode, log); err != nil {
 		return fmt.Errorf("Error removing mount dir: %s", err)
 	}
 
@@ -639,11 +645,29 @@ func nativeInstallerAppBundleExecPath(appPath string) string {
 	return filepath.Join(nativeInstallerAppBundlePath(appPath), "Contents/MacOS/Keybase")
 }
 
-func removeMountDir(appPath string, runMode string, log Log) error {
+func uninstallMountDir(runMode libkb.RunMode, log Log) error {
 	// We need the installer to remove the mount directory (since it's in the root, only the helper tool can do it)
-	cmd := exec.Command(nativeInstallerAppBundleExecPath(appPath), fmt.Sprintf("--run-mode=%s", runMode), "--uninstall-mountdir")
+	return execNativeInstallerWithArg("--uninstall-mountdir", runMode, log)
+}
+
+func uninstallFuse(runMode libkb.RunMode, log Log) error {
+	log.Info("Removing KBFuse")
+	return execNativeInstallerWithArg("--uninstall-fuse", runMode, log)
+}
+
+func uninstallHelper(runMode libkb.RunMode, log Log) error {
+	log.Info("Removing privileged helper tool")
+	return execNativeInstallerWithArg("--uninstall-helper", runMode, log)
+}
+
+func execNativeInstallerWithArg(arg string, runMode libkb.RunMode, log Log) error {
+	appPath, err := AppBundleForPath()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(nativeInstallerAppBundleExecPath(appPath), fmt.Sprintf("--run-mode=%s", runMode), arg)
 	output, err := cmd.CombinedOutput()
-	log.Debug("Output (uninstall-mountdir): %s", string(output))
+	log.Debug("Output (%s): %s", arg, string(output))
 	return err
 }
 
